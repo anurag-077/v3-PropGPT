@@ -119,3 +119,4 @@ Render Results (analysis, tokens, sources)
 - **Transparent Output**: Retrieved snippets and token counts make every response auditable.
 - **Extensible**: Adding new mapping keys or categories automatically flows through the pipeline.
 
+test
