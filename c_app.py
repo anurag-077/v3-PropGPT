@@ -759,9 +759,9 @@ OUTPUT FORMAT (STRICT)
 Rules:
 - Clearly label sections with headings
 - Show only relevant data and insights
-{"" if len(items) == 1 else """
-- When comparing 3+ items, highlight key differences and similarities
-- Group related insights by theme rather than by item"""}
+{" " if len(items) == 1 else 
+"- When comparing 3+ items, highlight key differences and similarities"
+"- Group related insights by theme rather than by item"}
 """
 
 def beautify_markdown(text: str) -> str:
