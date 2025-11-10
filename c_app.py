@@ -11,6 +11,9 @@ import streamlit as st
 import tiktoken
 from dotenv import load_dotenv
 
+os.environ["TRANSFORMERS_NO_TF_IMPORT"] = "1"
+
+
 # Must be the first Streamlit command
 st.set_page_config(
     page_title="PropGPT - Real Estate Analysis",
