@@ -368,13 +368,6 @@ def load_and_clean_data(excel_path, pickle_path, comparison_type, items=None, ye
         logger.error(f"Error loading data: {e}")
         return None, None, None
 
-# This function has been replaced by get_comparison_items
-# Keeping it for reference but it's no longer used
-@st.cache_data
-# Deprecated: This function has been removed in favor of get_comparison_items
-# def get_village_names():
-#     logger.warning("Deprecated: Use get_comparison_items instead")
-#     return get_comparison_items("Location")
 
 def create_documents(df, item_ids: List[str], defaults, columns_by_key: Dict[str, List[str]], years: List[int] = None, comparison_type: str = "Location", id_col: str = "final location"):
     if years is None:
@@ -1451,19 +1444,32 @@ with st.sidebar:
             st.caption(f"{len(selected_items)} {comparison_type}(s) selected")
     
     st.divider()
-    
-    # Categories Selection
+
+    # Categories Selection - Dynamic based on comparison type mappings
     st.write("**Analysis Categories**")
+    category_options = [key.title() for key in CATEGORY_MAPPING.keys()]
     categories = st.multiselect(
         "Categories",
-        options=["Demand", "Supply", "Price", "Demography"],
-        default=["Demand"],
+        options=category_options,
+        default=category_options[1:2] if len(category_options) > 1 else category_options,
         help="Choose analysis focus areas",
         label_visibility="collapsed"
     )
     
     st.divider()
-    
+
+    # Show candidate mapping keys for selected categories
+    if categories:
+        candidate_keys = []
+        for category in [cat.lower() for cat in categories]:
+            candidate_keys.extend(get_category_keys(category))
+        candidate_keys = sorted(set(candidate_keys))
+        with st.expander("Selected Category Mapping Keys", expanded=False):
+            st.write("Mapping keys that will be passed to the selection agent:")
+            st.write([key.title() for key in candidate_keys])
+
+    st.divider()
+
     # Custom Query
     st.write("**Analysis Query**")
     query = st.text_area(

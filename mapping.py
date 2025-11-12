@@ -622,7 +622,7 @@ COLUMN_MAPPING_Location = {
 }
 
 CATEGORY_MAPPING_Location = {
-    "All": [
+    "all": [
         "Location",
         "Total Buildings or Towers",
         "Total Phases Launched",
@@ -1013,6 +1013,10 @@ COLUMN_MAPPING_Project = {
         "office adopted unsold",
         "others adopted unsold",
     ],
+    "Total FSI in Project in Sqmtr": [
+        "total fsi (sqmtr)",
+        "plot area (sqmtr)"
+    ],
     "BHK type wise unsold units": [
         "<1bhk adopted unsold",
         "1bhk adopted unsold",
@@ -1027,7 +1031,7 @@ COLUMN_MAPPING_Project = {
 }
 
 CATEGORY_MAPPING_Project = {
-    "All": [
+    "all": [
         "Name of the organization/ Indvidual",
         "No of Buildings or Towers in Project",
         "Project City",
@@ -1041,7 +1045,7 @@ CATEGORY_MAPPING_Project = {
         "broad property types Share (%)",
         "total floors",
     ],
-    "Demand": [
+    "demand": [
         "BHK Type wise Carpet area sold or consumed in sqft",
         "BHK Type wise Unit Sold",
         "BHK type wise average carpet area in sqft",
@@ -1056,11 +1060,11 @@ CATEGORY_MAPPING_Project = {
         "Total Carpet Area sold or consumed in sqmtr",
         "Units sold",
     ],
-    "Demography": [
+    "demography": [
         "Top 10 Buyer Pincode",
         "Top Buyer Pincode",
     ],
-    "Price": [
+    "price": [
         "BHK Type Wise Average Price per Sq. Ft. (Carpet Area Basis)",
         "BHK type wise Average Price (INR)",
         "BHK type wise Total Sales (INR)",
@@ -1079,7 +1083,7 @@ CATEGORY_MAPPING_Project = {
         "Property type wise total price range wise unit sold",
         "Total sales (INR)",
     ],
-    "Supply": [
+    "supply": [
         "BHK Type wise Total Carpet area in Sqmtr",
         "BHK Type wise Total Units",
         "Project Crapet area range in sqmtr",
@@ -1090,7 +1094,7 @@ CATEGORY_MAPPING_Project = {
         "Total FSI in Project in Sqmtr",
         "Total Units in Project",
     ],
-    "Unsold": [
+    "unsold": [
         "BHK type wise unsold units",
         "Projects Adopted Unsold units",
         "Property type wise unsold units",
@@ -1577,7 +1581,7 @@ COLUMN_MAPPING_City = {
 
 
 CATEGORY_MAPPING_City = {
-    "All": [
+    "all": [
         "Name of the City",
         "Total Buildings or Towers",
         "Total Completed Phases",
@@ -1586,7 +1590,7 @@ CATEGORY_MAPPING_City = {
         "Total Project Launched",
         "Total property type wise projects",
     ],
-    "Demand": [
+    "demand": [
         "BHK type wise Carpet area sold or consumed",
         "BHK type wise area range wise Carpet area sold or consumed",
         "BHK type wise area range wise total sales analysis (INR)",
@@ -1604,7 +1608,7 @@ CATEGORY_MAPPING_City = {
         "broad property type wise Carpet area sold or consumed",
         "broad property types wise unit sold",
     ],
-    "Demography": [
+    "demography": [
         "BHK type wise Age Range wise carpet area sold or consumed",
         "BHK type wise Age Range wise total sales (INR)",
         "BHK type wise Age Range wise units sold",
@@ -1620,7 +1624,7 @@ CATEGORY_MAPPING_City = {
         "Top 10 Buyer Pincode",
         "Top buyer pincode",
     ],
-    "Price": [
+    "price": [
         "BHK type wise Price (/sqft) range wise Units sold",
         "BHK type wise Price (/sqft) range wise carpet area sold or consumed",
         "BHK type wise Price (/sqft) range wise total sales (INR)",
@@ -1644,7 +1648,7 @@ CATEGORY_MAPPING_City = {
         "broad property type wise average price (INR)",
         "broad property type wise total sales (INR)",
     ],
-    "Supply": [
+    "supply": [
         "BHK type wise total carpet area",
         "BHK type wise total units",
         "Property type wise total carpet area",
