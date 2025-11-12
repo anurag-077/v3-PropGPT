@@ -15,11 +15,11 @@ os.environ["TRANSFORMERS_NO_TF_IMPORT"] = "1"
 
 
 # Must be the first Streamlit command
+# --------------- UI CONFIG ----------------
 st.set_page_config(
-    page_title="PropGPT - Real Estate Analysis",
-    page_icon="🏠",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="PropGPT Sigmavalue",
+    page_icon="🧠",
+    layout="wide"
 )
 from fuzzywuzzy import process
 from langchain_core.documents import Document
@@ -738,9 +738,16 @@ def build_prompt(question: str, comparison_type: str, items: List[str], mapping_
     
     return f"""
 You are PropGPT, an elite real-estate analyst. Answer in clean, well-structured MARKDOWN.
-Do not insert spaced headings (e.g., C A R P E T). Use normal headings.
-Keep responses concise but information-dense. Use short paragraphs and bullet lists.
-DO NOT USE TABLES under any circumstance.
+
+MARKDOWN FORMATTING RULES (CRITICAL):
+1. Use ### for main section headings (Executive Summary, Trend Highlights, Deep Insights)
+2. Use #### for subsection headings (location names like Baner, Hinjewadi, Ravet, or categories like Flats, Offices)
+3. Use - for bullet points (NOT * or ◦)
+4. NEVER use bold asterisks (**text**) or italic asterisks (*text*) for headings
+5. Always put a blank line between major sections only
+6. NO blank lines after subheadings - content should start immediately
+7. NO TABLES - use bullet points instead
+8. NO separate year bullets - integrate year info into content
 
 REQUEST
 - Query: "{question}"
@@ -748,173 +755,68 @@ REQUEST
 - {"Analyze" if len(items) == 1 else "Compare"}: {items_display} ({comparison_type.lower()}-wise, 2020–2024)
 - Number of Items: {len(items)}
 - Categories: {category_summary}
-- Mapping Keys: {json.dumps(mapping_keys)}
-- Selected Columns: {json.dumps(selected_columns)}
 
 RETRIEVED EVIDENCE (context)
 {context}
 
-OUTPUT FORMAT (STRICT)
-- Title
-- Executive Summary
-- {"Key Metrics" if len(items) == 1 else "Trend Highlights"}
-- {"Deep Insights" if len(items) == 1 else f"Deep Insights (for each {comparison_type})"}
-Rules:
-- Clearly label sections with headings
-- Show only relevant data and insights
-{" " if len(items) == 1 else 
-"- When comparing 3+ items, highlight key differences and similarities"
-"- Group related insights by theme rather than by item"}
+OUTPUT FORMAT (STRICT - follow exactly):
+
+# [Title/Topic Name]
+
+### Executive Summary
+[2-3 sentences summarizing key findings]
+
+### {"Key Metrics" if len(items) == 1 else "Trend Highlights"}
+[Bullet points with key metrics and trends]
+
+### {"Deep Insights" if len(items) == 1 else "Deep Insights"}
+{"" if len(items) == 1 else f"""
+For each {comparison_type.lower()}, include:
+
+#### [Location/Item Name]
+#### Flats:
+- Average Price (2020): ₹X per sq. ft. → (2024): ₹Y per sq. ft. (Growth: Z%)
+- [Key insight about trend]
+- [Another metric or observation]
+
+#### Offices:
+- Average Price (2020): ₹X per sq. ft. → (2024): ₹Y per sq. ft. (Growth: Z%)
+- [Key insight about trend]
+"""}
+
+CRITICAL DO's AND DON'Ts:
+✓ DO: "Average Price (2020): ₹9,915.77 per sq. ft. → (2024): ₹12,396.71 per sq. ft."
+✗ DON'T: Separate bullets for "2020" or "2024"
+✓ DO: Integrate years directly into the metric statement
+✗ DON'T: Add blank lines after #### headings
+✓ DO: Start content immediately after heading
+✗ DON'T: Use bare year numbers as bullet points
 """
 
 def beautify_markdown(text: str) -> str:
     """
-    Preserve markdown; fix spaced-cap headings; add blank lines before
-    headings/tables/lists; inject newlines if markers appear mid-line;
-    normalize bullets and known section titles; rebuild malformed tables;
-    collapse whitespace.
+    Simple markdown cleanup - prevents automatic numbered list creation
     """
     if not text:
         return ""
 
-    s = text.replace("\r\n", "\n")
-
-    # Fix SPACED CAPS in headings/titles: "C A R P E T" -> "CARPET"
-    s = re.sub(r"(?<=\b)([A-Z])\s+(?=[A-Z]\b)", r"\\1", s)
-
-    # Fix broken 'in sqft) igr' tokens
-    s = re.sub(r"in sqft\)\s+igr", "in sqft) - igr", s, flags=re.IGNORECASE)
-
-    # Ensure markers start on their own line
-    s = re.sub(r"(?<!\n)(#{1,6}\s)", r"\n\1", s)         # headings
-    s = re.sub(r"(?<!\n)(\*\s)", r"\n\1", s)            # bullets '* '
-    s = re.sub(r"(?<!\n)(-\s)", r"\n\1", s)             # bullets '- '
-    s = re.sub(r"(?<!\n)(\d+\.\s)", r"\n\1", s)        # numbered lists
-    s = re.sub(r"(?<!\n)\|", r"\n|", s)                  # table rows
-
-    # Split concatenated headings like '### Strategic RecommendationsPimple Nilakh:'
-    s = s.replace(
-        '### Strategic RecommendationsPimple Nilakh:',
-        '### Strategic Recommendations\n\n#### Pimple Nilakh'
-    )
-    s = s.replace(
-        '### Strategic RecommendationsPimple Gurav:',
-        '### Strategic Recommendations\n\n#### Pimple Gurav'
-    )
-
-    lines = s.split("\n")
-    out: List[str] = []
-
-    # Known section titles to promote to headings
-    section_titles = {
-        "executive summary": "### Executive Summary",
-        "kpi snapshot": "### KPI Snapshot",
-        "demand/supply kpis (totals, latest, yoy) per village": "#### Demand/Supply KPIs (Totals, Latest, YoY) per village",
-        "price/rate kpis": "#### Price/Rate KPIs",
-        "trend highlights": "### Trend Highlights",
-        "deep insights": "### Deep Insights",
-        "strategic recommendations": "### Strategic Recommendations",
-        "risks & watchouts": "### Risks & Watchouts",
-        "sources": "### Sources",
-        "strategic recommendations - pimple gurav": "#### Pimple Gurav",
-        "strategic recommendations - pimple nilakh": "#### Pimple Nilakh",
-        "pimple gurav": "#### Pimple Gurav",
-        "pimple nilakh": "#### Pimple Nilakh",
-    }
-
-    def rebuild_table(block: List[str]) -> List[str]:
-        # Parse rows
-        rows: List[List[str]] = []
-        for raw in block:
-            if not raw.strip().startswith('|'):
-                continue
-            # Remove leading/trailing pipes and split
-            cells = [c.strip() for c in raw.strip().strip('|').split('|')]
-            # Drop empty trailing cells
-            while cells and cells[-1] == '':
-                cells.pop()
-            # Remove leading bullets in cell text
-            cells = [re.sub(r"^[*\-]\s*", "", c) for c in cells]
-            if cells:
-                rows.append(cells)
-        if not rows:
-            return block
-        # Determine max columns
-        max_cols = max(len(r) for r in rows)
-        # Normalize all rows to same length
-        norm_rows = [r + [''] * (max_cols - len(r)) for r in rows]
-        # If header separator exists in second row, drop it
-        if len(norm_rows) >= 2 and all(re.match(r"^:?-{3,}:?$", c.replace(' ', '')) for c in norm_rows[1]):
-            norm_rows.pop(1)
-        header = norm_rows[0]
-        # If header has blank titles, synthesize generic labels
-        if all(not h for h in header):
-            header = [f"Col {i+1}" for i in range(max_cols)]
-        # Build separator
-        sep = ['---'] * max_cols
-        # Build lines
-        def join_row(r: List[str]) -> str:
-            return '| ' + ' | '.join(r) + ' |'
-        rebuilt = [join_row(header), join_row(sep)] + [join_row(r) for r in norm_rows[1:]]
-        return rebuilt
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-
-        # Normalize bullets
-        if stripped.startswith('*') and not stripped.startswith('* '):
-            stripped = '* ' + stripped[1:].lstrip()
-        if stripped.startswith('-') and not stripped.startswith('- '):
-            stripped = '- ' + stripped[1:].lstrip()
-
-        # Convert italic label bullets like '*Increase 2BHK Supply:*' to '- Increase 2BHK Supply:'
-        stripped = re.sub(r'^\*\s*\*?([^*:]+?)\*?\s*:\s*$', r'- \1:', stripped)
-        stripped = re.sub(r'^\*\s+([^:]+):', r'- \1:', stripped)
-        # Drop lone bullets
-        if stripped in ('*', '-', '* ', '- '):
-            i += 1
-            continue
-
-        # Promote known section titles to proper headings
-        lower = stripped.lower().rstrip(':')
-        if lower in section_titles:
-            stripped = section_titles[lower]
-
-        is_heading = stripped.startswith('#') or re.match(r"^[A-Z][A-Z\s\-\&\:]{3,}$", stripped or "")
-        is_table = stripped.startswith('|') and ('|' in stripped)
-        is_list = stripped.startswith(('-', '*')) or re.match(r"^\d+\.\s+", stripped or "")
-
-        # Add blank line before sections
-        if (is_heading or is_table or is_list) and out and out[-1].strip() != "":
-            out.append("")
-
-        if is_table:
-            # Gather contiguous table lines (skip blank lines inside)
-            tbl: List[str] = [stripped]
-            j = i + 1
-            while j < len(lines):
-                nxt = lines[j].strip()
-                if nxt == '':
-                    j += 1
-                    continue
-                if nxt.startswith('|') and ('|' in nxt):
-                    tbl.append(nxt)
-                    j += 1
-                    continue
-                break
-            rebuilt = rebuild_table(tbl)
-            out.extend(rebuilt)
-            i = j
-            continue
-
-        out.append(stripped)
-        i += 1
-
-    s = "\n".join(out)
-    s = re.sub(r"\n{3,}", "\n\n", s)
-    return s.strip()
+    # Step 1: Prevent markdown from creating numbered lists with years
+    # Escape years at the start of lines to prevent auto-numbering
+    text = re.sub(r'^(\d{4}\.)', r'\\\1', text, flags=re.MULTILINE)
+    
+    # Step 2: Basic markdown cleanup
+    text = re.sub(r'[◦•◆■●]\s+', '- ', text)
+    
+    # Step 3: Fix section headers
+    # text = re.sub(r'^\\([^]+?)\\\s:\s*$', r'#### \1:', text, flags=re.MULTILINE)
+    
+    # Step 4: Ensure proper spacing for bullets
+    text = re.sub(r'(?<!\n)(-\s)', r'\n\1', text)
+    
+    # Step 5: Fix concatenated headings (like "### Executive SummaryThe Pune")
+    text = re.sub(r'(### [A-Za-z ]+)([A-Z][a-z])', r'\1\n\n\2', text)
+    
+    return text.strip()
 
 def strip_tables(text: str) -> str:
     if not text:
@@ -1047,171 +949,451 @@ with st.sidebar.expander("System Status", expanded=False):
     st.write("Pickle File Exists:", Path(pickle_path).exists())
     st.write("Sheet Configuration:", SHEET_CONFIG)
 
-# Custom CSS for better UI
+# Professional Dark Mode CSS
 st.markdown("""
 <style>
-    /* Main container */
-    .main {
-        background-color: #f8f9fa;
-        padding: 2rem;
+    /* Color Scheme */
+    :root {
+        --bg-primary: #0F1419;
+        --bg-secondary: #1A1F2E;
+        --bg-tertiary: #252D3D;
+        --accent-primary: #4A90E2;
+        --accent-secondary: #6BA3F5;
+        --text-primary: #E8EAED;
+        --text-secondary: #B0B5C2;
+        --border-color: #34394F;
+        --success: #34C759;
+        --error: #FF3B30;
     }
     
-    /* Headers */
+    /* Main App Container */
+    .stApp {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        line-height: 1.6;
+    }
+    
+    /* Scrollbar Styling */
+    .stApp::-webkit-scrollbar {
+        width: 8px;
+    }
+    .stApp::-webkit-scrollbar-track {
+        background: var(--bg-secondary);
+    }
+    .stApp::-webkit-scrollbar-thumb {
+        background: var(--accent-primary);
+        border-radius: 4px;
+    }
+    .stApp::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-secondary);
+    }
+    
+    /* Typography */
+    h1, h2, h3, h4, h5, h6 {
+        font-weight: 600;
+        letter-spacing: -0.5px;
+    }
+    
     h1 {
-        color: #1a1a1a;
-        font-size: 2.5rem !important;
-        font-weight: 700 !important;
-        margin-bottom: 1rem !important;
+        font-size: 2.5rem;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        font-weight: 700;
     }
     
     h2 {
-        color: #2c3e50;
-        font-size: 1.8rem !important;
-        font-weight: 600 !important;
+        font-size: 1.875rem;
+        color: var(--text-primary);
+        margin-top: 1.5rem;
+        margin-bottom: 1rem;
+        font-weight: 600;
     }
     
     h3 {
-        color: #34495e;
-        font-size: 1.5rem !important;
-        font-weight: 600 !important;
+        font-size: 1.25rem;
+        color: var(--accent-secondary);
+        margin-top: 1.25rem;
+        margin-bottom: 0.75rem;
+        font-weight: 600;
+    }
+    
+    h4 {
+        font-size: 1rem;
+        color: var(--text-primary);
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+    
+    /* Paragraph and Text */
+    p, body {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.7;
+    }
+    
+    /* Main Container */
+    .main {
+        background-color: var(--bg-primary);
     }
     
     /* Sidebar */
-    .css-1d391kg {
-        background-color: #ffffff;
-        padding: 2rem 1rem;
+    [data-testid="stSidebar"] {
+        background-color: var(--bg-secondary);
+        border-right: 1px solid var(--border-color);
+    }
+    
+    [data-testid="stSidebar"] > div:first-child {
+        background-color: var(--bg-secondary);
+    }
+    
+    /* Sidebar Text */
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p {
+        color: var(--text-primary);
+    }
+    
+    /* Input Fields */
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stSelectbox > div > div > select,
+    .stMultiSelect > div > div > select,
+    textarea {
+        background-color: var(--bg-tertiary) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 6px !important;
+        padding: 10px 12px !important;
+        font-size: 0.95rem !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stNumberInput > div > div > input:focus,
+    .stSelectbox > div > div > select:focus,
+    textarea:focus {
+        border-color: var(--accent-primary) !important;
+        box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1) !important;
+        outline: none !important;
     }
     
     /* Buttons */
     .stButton > button {
-        background-color: #2c3e50;
+        background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
         color: white;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        font-weight: 500;
         border: none;
+        border-radius: 8px;
+        padding: 10px 24px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
         transition: all 0.3s ease;
+        text-transform: none;
+        letter-spacing: 0.3px;
     }
     
     .stButton > button:hover {
-        background-color: #34495e;
         transform: translateY(-2px);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        box-shadow: 0 8px 16px rgba(74, 144, 226, 0.3);
     }
     
-    /* Select boxes and inputs */
-    .stSelectbox, .stMultiSelect {
-        background-color: white;
-        border-radius: 8px;
-        margin-bottom: 1rem;
+    .stButton > button:active {
+        transform: translateY(0);
     }
     
-    /* Expander styling */
+    /* Secondary Button Style */
+    .stButton > button[kind="secondary"] {
+        background-color: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+    }
+    
+    .stButton > button[kind="secondary"]:hover {
+        background-color: var(--border-color);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Expanders */
     .streamlit-expanderHeader {
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        padding: 0.5rem;
-        font-weight: 600 !important;
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 12px 16px;
+        color: var(--text-primary);
+        font-weight: 600;
+        transition: all 0.2s ease;
     }
     
-    /* JSON display */
-    .element-container .stJson {
-        background-color: #2c3e50 !important;
-        color: #ffffff !important;
-        border-radius: 8px;
-        padding: 1rem;
+    .streamlit-expanderHeader:hover {
+        background-color: var(--border-color);
     }
     
-    /* Success/Error messages */
-    .stSuccess, .stError {
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
+    .streamlit-expanderHeader p {
+        margin: 0;
     }
     
-    /* Markdown text */
-    .markdown-text-container {
-        background-color: white;
-        padding: 1.5rem;
+    /* Multiselect */
+    .stMultiSelect [data-baseweb="tag"] {
+        background-color: var(--accent-primary);
+        border-radius: 6px;
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: var(--text-secondary);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        color: var(--accent-primary);
+        border-bottom: 2px solid var(--accent-primary);
+    }
+    
+    /* Containers and Sections */
+    .stContainer {
+        background-color: var(--bg-secondary);
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 16px;
+        border: 1px solid var(--border-color);
     }
     
     /* Metrics */
     .stMetric {
-        background-color: white;
-        padding: 1rem;
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 16px;
     }
+    
+    .stMetric [data-testid="stMetricValue"] {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--accent-secondary);
+    }
+    
+    .stMetric [data-testid="stMetricLabel"] {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    /* Messages */
+    .stSuccess {
+        background-color: rgba(52, 199, 89, 0.1);
+        color: var(--success);
+        border: 1px solid var(--success);
+        border-radius: 6px;
+        padding: 12px 16px;
+    }
+    
+    .stError {
+        background-color: rgba(255, 59, 48, 0.1);
+        color: var(--error);
+        border: 1px solid var(--error);
+        border-radius: 6px;
+        padding: 12px 16px;
+    }
+    
+    .stWarning {
+        background-color: rgba(255, 159, 64, 0.1);
+        color: #FF9F40;
+        border: 1px solid #FF9F40;
+        border-radius: 6px;
+        padding: 12px 16px;
+    }
+    
+    .stInfo {
+        background-color: rgba(74, 144, 226, 0.1);
+        color: var(--accent-secondary);
+        border: 1px solid var(--accent-primary);
+        border-radius: 6px;
+        padding: 12px 16px;
+    }
+    
+    /* Code Blocks */
+    code {
+        background-color: var(--bg-tertiary);
+        color: #7EC699;
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 0.85rem;
+        font-family: 'Fira Code', 'Monaco', monospace;
+    }
+    
+    pre {
+        background-color: var(--bg-tertiary) !important;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 16px !important;
+        overflow-x: auto;
+    }
+    
+    /* Markdown Content */
+    .markdown-text-container {
+        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 20px;
+        margin: 12px 0;
+    }
+    
+    /* Lists */
+    ul, ol {
+        color: var(--text-secondary);
+    }
+    
+    li {
+        margin-bottom: 8px;
+        color: var(--text-secondary);
+    }
+    
+    li strong {
+        color: var(--text-primary);
+    }
+    
+    /* Links */
+    a {
+        color: var(--accent-primary);
+        text-decoration: none;
+        transition: color 0.2s ease;
+    }
+    
+    a:hover {
+        color: var(--accent-secondary);
+        text-decoration: underline;
+    }
+    
+    /* Horizontal Line */
+    hr {
+        border: none;
+        height: 1px;
+        background: linear-gradient(to right, transparent, var(--border-color), transparent);
+        margin: 24px 0;
+    }
+    
+    /* JSON Display */
+    .stJson {
+        background-color: var(--bg-tertiary) !important;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 16px !important;
+    }
+    
+    /* Table Styling */
+    [data-testid="stTable"] {
+        background-color: var(--bg-tertiary);
+    }
+    
+    table {
+        color: var(--text-secondary);
+    }
+    
+    th {
+        color: var(--text-primary);
+        font-weight: 600;
+        background-color: var(--bg-tertiary);
+        border-color: var(--border-color);
+    }
+    
+    td {
+        border-color: var(--border-color);
+    }
+    
+    tr:hover {
+        background-color: rgba(74, 144, 226, 0.05);
+    }
+    
+    /* Spinners and Loaders */
+    .stSpinner > div {
+        border-color: var(--accent-primary);
+    }
+    
+    /* Dividers */
+    .divider {
+        background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+        height: 1px;
+        margin: 20px 0;
+    }
+    
 </style>
 """, unsafe_allow_html=True)
 
 # Header Section
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.title("🏠 PropGPT")
-    st.markdown("""
-    <div class='markdown-text-container'>
-        <h3 style='margin:0'>AI-Powered Real Estate Analysis Platform</h3>
-        <p style='color:#666;margin-top:0.5rem'>Compare real estate metrics between villages using advanced AI analysis (2020–2024)</p>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown("""
+<div style='padding: 2rem 0; border-bottom: 1px solid #34394F; margin-bottom: 2rem;'>
+    <h1 style='margin: 0 0 0.5rem 0;'>Real Estate Analysis Platform</h1>
+    <p style='margin: 0; color: #B0B5C2; font-size: 0.95rem;'>Advanced AI-powered comparative analysis of real estate metrics across multiple locations</p>
+</div>
+""", unsafe_allow_html=True)
 
 # Check for OpenAI API key
 if not os.getenv('OPENAI_API_KEY'):
-    st.error("⚠️ OPENAI_API_KEY not found in environment variables. Please set it in your .env file.")
+    st.error("OPENAI_API_KEY not found in environment variables. Please set it in your .env file.")
     st.stop()
 
 llm = get_llm()
 if not llm:
-    st.error("⚠️ Failed to initialize OpenAI LLM. Please check your API key.")
+    st.error("Failed to initialize LLM. Please check your API key.")
     st.stop()
 
 # Get initial items for default comparison type
 initial_comparison_type = list(SHEET_CONFIG.keys())[0]  # Get first comparison type as default
 initial_items = get_comparison_items(initial_comparison_type)
 if not initial_items:
-    st.error(f"❌ No items found in {EXCEL_FILE}. Please check the data file.")
+    st.error(f"No items found in {EXCEL_FILE}. Please check the data file.")
     st.stop()
 
 # Sidebar for inputs
 with st.sidebar:
     st.markdown("""
-        <div style='background-color: #f8f9fa; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;'>
-            <h2 style='margin:0; color: #2c3e50; font-size: 1.5rem;'>📊 Analysis Settings</h2>
-        </div>
+    <div style='padding-bottom: 1.5rem; border-bottom: 1px solid #34394F; margin-bottom: 1.5rem;'>
+        <h2 style='margin: 0 0 0.25rem 0; font-size: 1.25rem;'>Configuration</h2>
+        <p style='margin: 0; color: #B0B5C2; font-size: 0.85rem;'>Set analysis parameters</p>
+    </div>
     """, unsafe_allow_html=True)
     
     # Data Refresh Button
-    if st.button("🔄 Refresh Data"):
-        if Path(pickle_path).exists():
-            os.remove(pickle_path)
-            st.success("Cache cleared! Data will be reloaded from Excel.")
-            st.rerun()
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.write("Data Cache")
+    with col2:
+        if st.button("Refresh"):
+            if Path(pickle_path).exists():
+                os.remove(pickle_path)
+                st.success("Cache cleared!")
+                st.rerun()
+    
+    st.divider()
     
     # Comparison Type Selection
-    st.markdown("<h3 style='font-size: 1.1rem; color: #34495e;'>Comparison Type</h3>", unsafe_allow_html=True)
+    st.write("**Comparison Type**")
     comparison_type = st.selectbox(
         "Select Type",
         options=list(SHEET_CONFIG.keys()),
-        help="Choose the type of comparison to perform"
+        help="Choose the type of comparison to perform",
+        label_visibility="collapsed"
     )
     
     # Initialize mappings based on comparison type
     set_mappings_for_type(comparison_type)
     
     # Show Excel sheet info
-    with st.expander("📊 Data Source Info", expanded=False):
-        st.write("Required Sheet:", SHEET_CONFIG[comparison_type]["sheet"])
+    with st.expander("Data Source Details"):
+        st.write("Sheet:", SHEET_CONFIG[comparison_type]["sheet"])
         st.write("ID Column:", SHEET_CONFIG[comparison_type]["id_col"])
         if Path(excel_path).exists():
-            # Use cached filtered dataframe to avoid re-reading Excel on every type change
             df = get_filtered_dataframe(comparison_type)
             if df is not None and not df.empty:
-                st.write("Available Columns:", df.columns.tolist())
-                st.write("Number of Rows:", len(df))
-                # Attempt to show which column will be used as the ID (resolved)
+                st.write("Columns:", len(df.columns))
+                st.write("Rows:", len(df))
                 configured = SHEET_CONFIG[comparison_type]["id_col"]
                 resolved = configured
                 if resolved not in df.columns:
@@ -1228,115 +1410,99 @@ with st.sidebar:
                         except Exception:
                             resolved = None
 
-                st.write("Configured ID column:", configured)
-                st.write("Resolved ID column:", resolved)
                 if resolved and resolved in df.columns:
-                    sample_vals = df[resolved].dropna().astype(str).str.strip().str.lower().unique()[:20]
-                    st.write(f"Sample values for '{resolved}':", list(sample_vals))
+                    sample_vals = df[resolved].dropna().astype(str).str.strip().str.lower().unique()[:10]
+                    st.write(f"Sample values:", list(sample_vals))
             else:
-                st.write("Sheet appears empty or not loaded.")
+                st.info("Dataset not loaded.")
+    
+    st.divider()
     
     # Dynamic Item Selection
-    st.markdown(f"<h3 style='font-size: 1.1rem; color: #34495e;'>Select {comparison_type}s to Analyze</h3>", unsafe_allow_html=True)
+    st.write(f"**Select {comparison_type}s**")
     if comparison_type.strip().lower() == "project":
         # Use formatted recommendations for project search
         df_projects, _, _ = load_and_clean_data(excel_path, pickle_path, comparison_type="Project")
         project_recs = get_project_recommendations(df_projects)
-        items = [f"{rec['project name']} , {rec['final_location']} , {rec['city']}" for rec in project_recs]
+        items = [f"{rec['project name']}, {rec['final_location']}, {rec['city']}" for rec in project_recs]
         # Map display string to project_name for later use
-        project_name_map = {f"{rec['project name']} , {rec['final_location']} , {rec['city']}": rec['project name'] for rec in project_recs}
+        project_name_map = {f"{rec['project name']}, {rec['final_location']}, {rec['city']}": rec['project name'] for rec in project_recs}
         selected_display_items = st.multiselect(
-            f"Select Projects to Analyze",
+            f"Projects",
             options=items,
             max_selections=5,
-            help="Choose 1-5 Projects to analyze (Project | Village | City)"
+            help="Choose 1-5 projects",
+            label_visibility="collapsed"
         )
         # For downstream logic, use only the project_name
         selected_items = [project_name_map[item] for item in selected_display_items]
         if selected_display_items:
-            st.info(f"Selected {len(selected_display_items)} Projects: {', '.join(selected_display_items)}")
+            st.caption(f"{len(selected_display_items)} project(s) selected")
     else:
         items = get_comparison_items(comparison_type)
         selected_items = st.multiselect(
-            f"Select {comparison_type}s to Analyze",
+            f"Select {comparison_type}s",
             options=items,
-            max_selections=5,  # Limit to reasonable number for readability
-            help=f"Choose 1-5 {comparison_type}s to analyze"
+            max_selections=5,
+            help=f"Choose 1-5 {comparison_type}s",
+            label_visibility="collapsed"
         )
         if selected_items:
-            st.info(f"Selected {len(selected_items)} {comparison_type}s: {', '.join(selected_items)}")
+            st.caption(f"{len(selected_items)} {comparison_type}(s) selected")
     
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
     
     # Categories Selection
-    st.markdown("<h3 style='font-size: 1.1rem; color: #34495e;'>Analysis Categories</h3>", unsafe_allow_html=True)
+    st.write("**Analysis Categories**")
     categories = st.multiselect(
-        "Select Categories",
+        "Categories",
         options=["Demand", "Supply", "Price", "Demography"],
         default=["Demand"],
-        help="Choose one or more categories to analyze"
+        help="Choose analysis focus areas",
+        label_visibility="collapsed"
     )
     
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
     
     # Custom Query
-    st.markdown("<h3 style='font-size: 1.1rem; color: #34495e;'>Custom Analysis Query</h3>", unsafe_allow_html=True)
+    st.write("**Analysis Query**")
     query = st.text_area(
-        "Enter your query",
-        placeholder="Example: Compare demand metrics for flats in both villages",
-        help="Specify your analysis requirements. Leave empty for default comparison.",
-        height=100
+        "Query",
+        placeholder="e.g., Compare demand trends for residential properties",
+        help="Leave empty for automatic analysis",
+        height=80,
+        label_visibility="collapsed"
     )
 
 # Main content area
-st.markdown("<br>", unsafe_allow_html=True)
+st.divider()
 
-# Analysis Button with Container
-st.markdown("""
-    <div style='background-color: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
-        <p style='color: #666; margin-bottom: 1rem;'>Click the button below to generate an AI-powered analysis of the selected villages.</p>
-    </div>
-""", unsafe_allow_html=True)
-
+# Analysis Button
 generate_btn = st.button(
-    "🚀 Generate Real Estate Analysis",
+    "Generate Analysis",
     type="primary",
     use_container_width=True,
+    help="Execute analysis with selected parameters"
 )
 
 if generate_btn:
-    # Input validation with styled error messages
+    # Input validation
     if not selected_items:
-        st.markdown(f"""
-            <div style='background-color: #fce4e4; color: #cc0033; padding: 1rem; border-radius: 8px; margin: 1rem 0;'>
-                <strong>❌ Error:</strong> Please select at least one {comparison_type} to analyze.
-            </div>
-        """, unsafe_allow_html=True)
+        st.error(f"Please select at least one {comparison_type} to analyze.")
         st.stop()
     
     if len(selected_items) > 5:
-        st.markdown(f"""
-            <div style='background-color: #fce4e4; color: #cc0033; padding: 1rem; border-radius: 8px; margin: 1rem 0;'>
-                <strong>❌ Error:</strong> Maximum 5 {comparison_type}s can be analyzed at once for clarity.
-            </div>
-        """, unsafe_allow_html=True)
+        st.error(f"Maximum 5 {comparison_type}s can be analyzed at once.")
         st.stop()
     
     # Check for duplicates (should be prevented by multiselect but verify)
     if len(set(i.lower() for i in selected_items)) != len(selected_items):
         st.markdown(f"""
             <div style='background-color: #fce4e4; color: #cc0033; padding: 1rem; border-radius: 8px; margin: 1rem 0;'>
-                <strong>❌ Error:</strong> Please select different {comparison_type}s for comparison.
-            </div>
-        """, unsafe_allow_html=True)
-        st.stop()
-    
+                <strong>❌ Error:</strong> Please select different {comparison_type}s for comparison.""")
+
     if not categories:
-        st.markdown("""
-            <div style='background-color: #fce4e4; color: #cc0033; padding: 1rem; border-radius: 8px; margin: 1rem 0;'>
-                <strong>❌ Error:</strong> Please select at least one category to analyze.
-            </div>
-        """, unsafe_allow_html=True)
+        st.error("Please select at least one category to analyze.")
         st.stop()
 
     if not query or not query.strip():
@@ -1349,23 +1515,34 @@ if generate_btn:
         else:
             items_display = ", ".join(selected_items[:-1]) + f" and {selected_items[-1]}"
             query = f"Compare {', '.join(categories).lower()} metrics for {items_display}"
-        st.info(f"ℹ️ No query provided. Using default: '{query}'")
+        st.info(f"Using default query: {query}")
 
     logger.info("Query: '%s'", query)
 
     try:
         llm = get_llm()
+        # Extract model information for display
+        provider = (os.getenv("USE_LLM") or "gemini").strip().lower()
+        if provider == "gemini":
+            model_name = os.getenv("GEMINI_MODEL", "gemma-3-27b-it")
+            provider_display = "Google Gemini"
+        elif provider == "nvidia":
+            model_name = os.getenv("NVIDIA_MODEL", "gemma-3-27b-it")
+            provider_display = "NVIDIA"
+        else:  # openai
+            model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            provider_display = "OpenAI"
     except Exception as exc:
         logger.error("Failed to initialize LLM: %s", exc)
-        st.error(f"❌ LLM initialization failed: {exc}")
+        st.error(f"LLM initialization failed: {exc}")
         st.stop()
 
-    # Get correct mapping for selected comparison type (use cached loader)
+    # Get correct mapping for selected comparison type
     cat_map, col_map = load_mappings(comparison_type)
     CATEGORY_MAPPING = cat_map
     COLUMN_MAPPING = col_map
 
-    # For Project comparisons we do not want to restrict to 2020-2024; pass years=None to skip year filtering
+    # For Project comparisons we do not want to restrict to 2020-2024
     req_years = None if str(comparison_type).strip().lower() == "project" else [2020, 2021, 2022, 2023, 2024]
     df, defaults, id_col = load_and_clean_data(
         excel_path,
@@ -1376,8 +1553,8 @@ if generate_btn:
     )
 
     if df is None or df.empty:
-        st.error(f"❌ No data found for selected {comparison_type}s in 2020-2024.")
-        # Provide helpful debug info to user to diagnose missing items
+        st.error(f"No data found for selected {comparison_type}s.")
+        # Provide helpful debug info
         try:
             if Path(pickle_path).exists():
                 dbg_df = joblib.load(pickle_path)
@@ -1494,12 +1671,11 @@ if generate_btn:
 
 
     # Analysis Configuration Summary
-    st.markdown("""
-        <div style='background-color: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin: 1rem 0;'>
-            <h3 style='color: #2c3e50; margin-top: 0;'>Analysis Configuration</h3>
-            <hr style='margin: 0.5rem 0;'>
+    st.markdown('''
+        <div style='border-top: 2px solid #34394F; padding: 1.5rem 0; margin: 2rem 0 1.5rem 0;'>
+            <h3 style='color: #E8EAED; margin: 0 0 1rem 0; font-weight: 600; letter-spacing: 0.5px;'>Configuration</h3>
         </div>
-    """, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
     
     formatted_prompt = build_prompt(
         question=query.strip(),
@@ -1513,11 +1689,6 @@ if generate_btn:
     
     # Display configuration in a collapsible section
     with st.expander("View Detailed Configuration", expanded=False):
-        st.markdown("""
-            <div style='background-color: #f8f9fa; padding: 1rem; border-radius: 8px;'>
-                <h4 style='color: #2c3e50; margin-top: 0;'>Analysis Parameters</h4>
-            </div>
-        """, unsafe_allow_html=True)
         config = {
             "Query": query.strip(),
             "Items": {f"Item {i+1}": item for i, item in enumerate(selected_items)},
@@ -1531,15 +1702,27 @@ if generate_btn:
     input_tokens = count_tokens(formatted_prompt)
     logger.info("Input tokens: %s", input_tokens)
 
-    st.markdown("---")
-    st.markdown("### Analysis")
+    # Results Section
+    st.markdown('''
+        <div style='border-top: 2px solid #34394F; padding: 1.5rem 0; margin: 2rem 0 1.5rem 0;'>
+            <h3 style='color: #E8EAED; margin: 0 0 1rem 0; font-weight: 600; letter-spacing: 0.5px;'>Analysis Results</h3>
+        </div>
+    ''', unsafe_allow_html=True)
+
+    # Model indicator
+    st.markdown(f"""
+    <div style='background-color: #1A1F2E; border-left: 3px solid #4A90E2; padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem;'>
+        <p style='color: #6BA3F5; margin: 0; font-size: 0.9rem; font-weight: 500;'>
+            🤖 Generated by <strong>{provider_display} - {model_name}</strong>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Toggle streaming behavior (set True to stream by default)
     stream = True
 
     with st.spinner("Generating analysis..."):
         if stream:
-            st.subheader("Analysis (Streaming)")
             response_container = st.empty()
             full_response = ""
             for chunk in llm.stream(formatted_prompt):
@@ -1552,48 +1735,63 @@ if generate_btn:
             response = llm.invoke(formatted_prompt)
             response_text = response.content if hasattr(response, 'content') else str(response)
             output_tokens = count_tokens(response_text)
-            st.subheader("Analysis")
             rendered = strip_tables(beautify_markdown(response_text))
             st.markdown(rendered, unsafe_allow_html=True)
 
-    with st.expander("ℹ️ Token Usage"):
-        st.metric("Input Tokens", input_tokens)
-        st.metric("Output Tokens", output_tokens)
-        st.metric("Total Tokens", input_tokens + output_tokens)
+    # Metrics Section
+    st.markdown('''
+        <div style='border-top: 2px solid #34394F; padding: 1.5rem 0; margin: 2rem 0 1rem 0;'>
+            <h3 style='color: #E8EAED; margin: 0 0 1rem 0; font-weight: 600; letter-spacing: 0.5px;'>Analysis Metrics</h3>
+        </div>
+    ''', unsafe_allow_html=True)
 
-    with st.expander("📚 Retrieved Sources"):
+    with st.expander("Token Usage & Model Info", expanded=False):
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Input Tokens", input_tokens)
+        with col2:
+            st.metric("Output Tokens", output_tokens)
+        with col3:
+            st.metric("Total Tokens", input_tokens + output_tokens)
+        with col4:
+            st.metric("Model", f"{provider_display}\n{model_name}")
+
+    # Retrieved Sources Section
+    st.markdown('''
+        <div style='border-top: 2px solid #34394F; padding: 1.5rem 0; margin: 2rem 0 1rem 0;'>
+            <h3 style='color: #E8EAED; margin: 0 0 1rem 0; font-weight: 600; letter-spacing: 0.5px;'>Data Sources</h3>
+        </div>
+    ''', unsafe_allow_html=True)
+
+    with st.expander("Retrieved Sources", expanded=False):
         for idx, doc in enumerate(query_context_docs, start=1):
-            st.markdown(f"**Source {idx} — {doc.metadata.get('mapping_key')}**")
+            st.markdown(f"**Source {idx}** — {doc.metadata.get('mapping_key')}")
             st.text(doc.page_content[:600] + ("..." if len(doc.page_content) > 600 else ""))
             st.caption(str(doc.metadata))
             st.markdown("---")
 
-    st.success("✅ Analysis complete.")
+    st.markdown('''
+    <div style="background-color: #1A1F2E; border-left: 3px solid #4A90E2; padding: 1rem; border-radius: 4px; margin: 2rem 0 1.5rem 0;">
+        <p style="color: #6BA3F5; margin: 0; font-weight: 500;">Analysis completed successfully</p>
+    </div>
+''', unsafe_allow_html=True)
 
     # Show project recommendations for Project search type
     if comparison_type.strip().lower() == "project":
         try:
             project_recs = get_project_recommendations(df)
-            with st.expander("🔎 Project Name Recommendations", expanded=False):
+            with st.expander("Project Recommendations", expanded=False):
                 for rec in project_recs:
                     st.write(f"{rec['project name']} | {rec['final_location']} | {rec['city']}")
         except Exception as e:
-            st.warning(f"Could not generate project recommendations: {e}")
+            st.markdown(f"<div style='background-color: #2a1a1a; border-left: 3px solid #e74c3c; padding: 1rem; border-radius: 4px;'><p style='color: #ec7063; margin: 0;'>Could not generate project recommendations: {e}</p></div>", unsafe_allow_html=True)
 
-# Footer
-st.markdown("""
-<style>
-.streamlit-expanderHeader {
-    font-weight: bold;
-}
-code {
-    color: #d63384;
-    background: #f8f9fa;
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-</style>
-""", unsafe_allow_html=True)
-st.markdown("---")
-st.markdown("**PropGPT** by SigmaValue | Real Estate Analysis Platform")
+footer_html = '''
+<div style="border-top: 1px solid #34394F; padding: 2rem 0; margin: 3rem 0 0 0; text-align: center;">
+    <p style="color: #B0B5C2; margin: 0; font-size: 0.9rem; letter-spacing: 0.3px;">
+        <strong>PropGPT</strong> by SigmaValue - Advanced Real Estate Analysis Platform
+    </p>
+</div>
+'''
 
+st.markdown(footer_html, unsafe_allow_html=True)
